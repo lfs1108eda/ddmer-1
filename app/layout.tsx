@@ -4,20 +4,8 @@ import "./globals.css";
 import "highlight.js/styles/vs2015.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
-import { BackgroundProvider } from "@/components/providers/BackgroundProvider";
-import { MusicProvider } from "@/components/providers/MusicProvider";
-import { EffectProvider } from "@/components/providers/EffectProvider";
 import { SiteConfigProvider } from "@/components/providers/SiteConfigProvider";
-import BackgroundRenderer from "@/components/layout/BackgroundRenderer";
 import Navbar from "@/components/layout/Navbar";
-import ClientWidgets from "@/components/layout/ClientWidgets";
-import ClickEffect from "@/components/ui/ClickEffect";
-import RadialMenu from "@/components/ui/RadialMenu";
-import MouseTrail from "@/components/ui/MouseTrail";
-import SeasonalEffect from "@/components/ui/SeasonalEffect";
-import KiraSparkle from "@/components/ui/KiraSparkle";
-import WelcomeScreen from "@/components/layout/WelcomeScreen";
-import VisitorTracker from "@/components/layout/VisitorTracker";
 import { getDbSiteConfig } from "@/app/lib/site-config-db";
 import { siteConfig } from "@/siteConfig";
 
@@ -43,21 +31,11 @@ export async function generateMetadata(): Promise<Metadata> {
     return {
       title: dbConfig.title || siteConfig.title,
       description: dbConfig.bio || siteConfig.bio,
-      alternates: {
-        types: {
-          "application/rss+xml": "/feed",
-        },
-      },
     };
   } catch {
     return {
       title: siteConfig.title,
       description: siteConfig.bio,
-      alternates: {
-        types: {
-          "application/rss+xml": "/feed",
-        },
-      },
     };
   }
 }
@@ -83,27 +61,10 @@ export default async function RootLayout({
       <body className="min-h-full flex flex-col font-sans">
         <SiteConfigProvider initialConfig={dbConfig}>
           <ThemeProvider>
-            <EffectProvider>
-              <WelcomeScreen />
-              <BackgroundProvider>
-                <MusicProvider>
-                  <ToastProvider>
-                    <BackgroundRenderer />
-                    <VisitorTracker />
-                    <ClickEffect />
-                    <RadialMenu />
-                    <MouseTrail />
-                    <SeasonalEffect />
-                    <KiraSparkle />
-                    <Navbar />
-                    <main className="flex-1 pt-16">
-                      {children}
-                    </main>
-                    <ClientWidgets />
-                  </ToastProvider>
-                </MusicProvider>
-              </BackgroundProvider>
-            </EffectProvider>
+            <ToastProvider>
+              <Navbar />
+              <main className="flex-1 pt-16">{children}</main>
+            </ToastProvider>
           </ThemeProvider>
         </SiteConfigProvider>
       </body>
