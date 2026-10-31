@@ -1,62 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import "katex/dist/katex.min.css";
 import { renderMarkdown } from "@/app/lib/markdown-math";
 import MarkdownEditor, { type EditorHandle } from "@/components/editor/MarkdownEditor";
 import { authHeaders, getToken, slugify } from "@/app/lib/client-auth";
 
-const DRAFT_KEY = "waopa_draft_v1";
+const DRAFT_KEY = "waopa_draft_v2";
+const MAX_CHARS = 100000;
 
-type Tool = {
-  key: string;
-  label: string;
-  title: string;
-  run: (editor: EditorHandle) => void;
-};
+const COLORS = ["#e11d48", "#ea580c", "#16a34a", "#2563eb", "#7c3aed", "#71717a"];
 
-const TOOLS: Tool[] = [
-  { key: "h2", label: "H2", title: "二级标题", run: e => e.insertBlock("## ", "小标题") },
-  { key: "h3", label: "H3", title: "三级标题", run: e => e.insertBlock("### ", "小标题") },
-  { key: "bold", label: "B", title: "加粗", run: e => e.wrap("**", "**") },
-  { key: "italic", label: "I", title: "斜体", run: e => e.wrap("*", "*") },
-  { key: "strike", label: "S", title: "删除线", run: e => e.wrap("~~", "~~") },
-  { key: "quote", label: "❝", title: "引用", run: e => e.insertBlock("> ", "引用内容") },
-  { key: "list", label: "•", title: "无序列表", run: e => e.insertBlock("- ", "列表项") },
-  { key: "ol", label: "1.", title: "有序列表", run: e => e.insertBlock("1. ", "列表项") },
-  { key: "code", label: "</>", title: "代码块", run: e => e.insert("\n```ts\n\n```\n") },
-  { key: "link", label: "🔗", title: "链接", run: e => e.wrap("[", "](https://)") },
-  { key: "line", label: "—", title: "分割线", run: e => e.insert("\n\n---\n\n") },
-  {
-    key: "inline-math",
-    label: "ƒ",
-    title: "行内公式（$…$）",
-    run: e => {
-      const tex = window.prompt("输入行内公式的 LaTeX，例如：a^2 + b^2 = c^2");
-      e.insert(tex ? `$${tex}$` : "$$");
-    }
-  },
-  {
-    key: "block-math",
-    label: "Σ",
-    title: "块级公式（$$…$$）",
-    run: e => {
-      const tex = window.prompt("输入公式的 LaTeX，例如：\\int_0^1 x^2 dx = \\frac{1}{3}");
-      if (tex) e.insert(`\n$$\n${tex}\n$$\n`);
-      else e.insert("\n$$\n\n$$\n");
-    }
-  }
-];
-
-const COLORS = [
-  { name: "红", value: "#e11d48" },
-  { name: "橙", value: "#ea580c" },
-  { name: "绿", value: "#16a34a" },
-  { name: "蓝", value: "#2563eb" },
-  { name: "紫", value: "#7c3aed" },
-  { name: "灰", value: "#71717a" }
-];
+type Heading = { text: string; level: number; line: number };
 
 function WriteInner() {
   const router = useRouter();
@@ -70,25 +26,28 @@ function WriteInner() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tags, setTags] = useState("");
-  const [preview, setPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [hint, setHint] = useState("");
   const [savedAt, setSavedAt] = useState("");
 
+  const [tocOpen, setTocOpen] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(true);
+  const [night, setNight] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
+
+  /* ---------------- 数据加载 ---------------- */
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login?next=/write");
       return;
     }
     if (editId) {
-      fetch(`/api/posts/${editId}?raw=1`, { headers: authHeaders() })
+      fetch(`/api/posts/${editId}`, { headers: authHeaders() })
         .then(r => (r.ok ? r.json() : null))
         .then(post => {
-          if (!post) {
-            setHint("文章不存在或无权编辑");
-            return;
-          }
+          if (!post) return setHint("文章不存在或无权编辑");
           setTitle(post.title ?? "");
           setContent(post.content ?? "");
           setTags(Array.isArray(post.tags) ? post.tags.join(" ") : "");
@@ -107,17 +66,18 @@ function WriteInner() {
         if (draft.content) setHint("已恢复上次未发布的内容");
       }
     } catch {
-      /* 忽略损坏的草稿 */
+      /* 忽略 */
     }
     setReady(true);
   }, [router, editId]);
 
+  /* ---------------- 自动保存 ---------------- */
   useEffect(() => {
     if (!ready || editId) return;
     const timer = setTimeout(() => {
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, content, tags, at: Date.now() }));
-        setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+        setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5));
       } catch {
         /* 忽略 */
       }
@@ -125,22 +85,45 @@ function WriteInner() {
     return () => clearTimeout(timer);
   }, [title, content, tags, ready, editId]);
 
-  const html = useMemo(() => (preview ? renderMarkdown(content) : ""), [content, preview]);
-  const wordCount = useMemo(() => content.replace(/\s/g, "").length, [content]);
+  /* ---------------- 派生数据 ---------------- */
+  const html = useMemo(() => renderMarkdown(content), [content]);
 
-  async function upload(files: File[]): Promise<string | null> {
+  const toc = useMemo<Heading[]>(() => {
+    return content
+      .split("\n")
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => /^#{1,3}\s+/.test(line))
+      .map(({ line, index }) => ({
+        text: line.replace(/^#{1,3}\s+/, "").trim(),
+        level: (line.match(/^#+/) as RegExpMatchArray)[0].length,
+        line: index
+      }));
+  }, [content]);
+
+  /* ---------------- 图片 ---------------- */
+  const upload = useCallback(async (files: File[]): Promise<string | null> => {
     setUploading(true);
     try {
       const parts: string[] = [];
       for (const file of files) {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch("/api/upload/image", {
-          method: "POST",
-          headers: authHeaders(),
-          body: form
-        });
-        if (!res.ok) continue;
+        let res: Response;
+        try {
+          res = await fetch("/api/upload/image", {
+            method: "POST",
+            headers: authHeaders(),
+            body: form
+          });
+        } catch {
+          setHint("网络异常，图片上传失败");
+          return null;
+        }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setHint(`图片上传失败（${res.status}）：${err.error ?? "未知错误"}`);
+          return null;
+        }
         const json = await res.json();
         if (json?.url) {
           const alt = file.name.replace(/\.[^.]+$/, "") || "图片";
@@ -149,12 +132,15 @@ function WriteInner() {
           );
         }
       }
-      return parts.length ? parts.join("") : null;
+      if (!parts.length) return null;
+      setHint("");
+      return parts.join("");
     } finally {
       setUploading(false);
     }
-  }
+  }, []);
 
+  /* ---------------- 提交 ---------------- */
   async function submit(asDraft: boolean) {
     setHint("");
     if (!title.trim()) return setHint("先写个标题吧");
@@ -188,35 +174,80 @@ function WriteInner() {
 
   if (!ready) return null;
 
-  return (
-    <div className="mx-auto w-full max-w-4xl px-5 py-8">
-      <input
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        placeholder="请输入标题"
-        className="w-full border-0 bg-transparent text-3xl font-bold tracking-tight outline-none placeholder:text-neutral-300 dark:placeholder:text-neutral-700"
-      />
+  const ToolBtn = ({
+    children,
+    title: t,
+    onClick
+  }: {
+    children: React.ReactNode;
+    title: string;
+    onClick: () => void;
+  }) => (
+    <button
+      type="button"
+      title={t}
+      onClick={onClick}
+      className="flex h-8 min-w-8 items-center justify-center rounded-md px-2 text-sm text-neutral-600 transition-colors hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
+    >
+      {children}
+    </button>
+  );
 
-      <div className="sticky top-16 z-20 my-3 flex flex-wrap items-center gap-1 rounded-xl border border-black/10 bg-white/90 px-2 py-1.5 backdrop-blur dark:border-white/10 dark:bg-[#1c1c1e]/90">
-        {TOOLS.map(tool => (
-          <button
-            key={tool.key}
-            type="button"
-            title={tool.title}
-            onClick={() => editorRef.current && tool.run(editorRef.current)}
-            className="rounded-lg px-2.5 py-1.5 text-sm text-neutral-600 transition-colors hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
-          >
-            {tool.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          title="插入图片"
-          onClick={() => fileRef.current?.click()}
-          className="rounded-lg px-2.5 py-1.5 text-sm text-neutral-600 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
+  return (
+    <div className="flex h-[calc(100vh-4rem)] flex-col bg-[#f4f5f7] dark:bg-[#0f0f11]">
+      {/* ============ 顶部工具栏 ============ */}
+      <div className="flex flex-wrap items-center gap-0.5 border-b border-black/5 bg-white px-3 py-1.5 dark:border-white/10 dark:bg-[#1a1a1d]">
+        <ToolBtn title="二级标题" onClick={() => editorRef.current?.insertBlock("## ", "小标题")}>H2</ToolBtn>
+        <ToolBtn title="三级标题" onClick={() => editorRef.current?.insertBlock("### ", "小标题")}>H3</ToolBtn>
+        <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
+        <ToolBtn title="加粗" onClick={() => editorRef.current?.wrap("**", "**")}><b>B</b></ToolBtn>
+        <ToolBtn title="斜体" onClick={() => editorRef.current?.wrap("*", "*")}><i>I</i></ToolBtn>
+        <ToolBtn title="删除线" onClick={() => editorRef.current?.wrap("~~", "~~")}><s>U</s></ToolBtn>
+        <ToolBtn title="行内代码" onClick={() => editorRef.current?.wrap("`", "`")}>{"</>"}</ToolBtn>
+        <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
+
+        <div className="relative">
+          <ToolBtn title="文字颜色" onClick={() => setColorOpen(v => !v)}>
+            <span className="font-semibold">A</span>
+            <span className="ml-0.5 h-1 w-3 rounded bg-gradient-to-r from-rose-500 to-blue-500" />
+          </ToolBtn>
+          {colorOpen && (
+            <div className="absolute left-0 top-9 z-30 flex gap-1.5 rounded-lg border border-black/10 bg-white p-2 shadow-lg dark:border-white/15 dark:bg-[#232326]">
+              {COLORS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  title={c}
+                  onClick={() => {
+                    editorRef.current?.wrap(`<span style="color:${c}">`, "</span>");
+                    setColorOpen(false);
+                  }}
+                  className="h-5 w-5 rounded-full border border-black/10 hover:scale-110 transition-transform"
+                  style={{ background: c }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
+        <ToolBtn title="无序列表" onClick={() => editorRef.current?.insertBlock("- ", "列表项")}>☰</ToolBtn>
+        <ToolBtn title="有序列表" onClick={() => editorRef.current?.insertBlock("1. ", "列表项")}>1.</ToolBtn>
+        <ToolBtn title="引用" onClick={() => editorRef.current?.insertBlock("> ", "引用内容")}>❝</ToolBtn>
+        <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
+        <ToolBtn title="插入图片" onClick={() => fileRef.current?.click()}>🖼</ToolBtn>
+        <ToolBtn title="链接" onClick={() => editorRef.current?.wrap("[", "](https://)")}>🔗</ToolBtn>
+        <ToolBtn title="代码块" onClick={() => editorRef.current?.insert("\n```ts\n\n```\n")}>▤</ToolBtn>
+        <ToolBtn
+          title="公式"
+          onClick={() => {
+            const tex = window.prompt("输入 LaTeX 公式，例如：\\frac{a}{b}");
+            if (tex) editorRef.current?.insert(`\n$$\n${tex}\n$$\n`);
+          }}
         >
-          🖼
-        </button>
+          Σ
+        </ToolBtn>
+
         <input
           ref={fileRef}
           type="file"
@@ -231,74 +262,188 @@ function WriteInner() {
             e.target.value = "";
           }}
         />
-        <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
-        {COLORS.map(color => (
-          <button
-            key={color.value}
-            type="button"
-            title={`文字颜色：${color.name}`}
-            onClick={() =>
-              editorRef.current?.wrap(`<span style="color:${color.value}">`, "</span>")
-            }
-            className="h-4 w-4 rounded-full border border-black/10 transition-transform hover:scale-125 dark:border-white/20"
-            style={{ background: color.value }}
-          />
-        ))}
+
         <div className="ml-auto flex items-center gap-3 pr-1 text-xs text-neutral-400">
           {uploading && <span className="text-sky-500">图片上传中…</span>}
-          {savedAt && <span>已自动保存 {savedAt}</span>}
-          <span>{wordCount} 字</span>
+          {savedAt && <span>已保存 {savedAt}</span>}
+          <button
+            type="button"
+            onClick={() => setTocOpen(v => !v)}
+            className={`rounded-md px-2 py-1 ${tocOpen ? "bg-black/5 dark:bg-white/10" : ""}`}
+            title="目录"
+          >
+            目录
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(v => !v)}
+            className={`rounded-md px-2 py-1 ${previewOpen ? "bg-black/5 dark:bg-white/10" : ""}`}
+            title="手机预览"
+          >
+            预览
+          </button>
         </div>
       </div>
 
-      {preview ? (
-        <article
-          className="md-body rounded-2xl border border-black/10 bg-white px-7 py-6 shadow-sm dark:border-white/10 dark:bg-[#1c1c1e]"
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <MarkdownEditor
-          ref={editorRef}
-          value={content}
-          onChange={setContent}
-          onImage={upload}
-          onError={setHint}
-          placeholder="开始写作…  直接粘贴截图，图片会自动上传并显示在这里"
-        />
-      )}
+      {/* ============ 三栏主体 ============ */}
+      <div className="flex min-h-0 flex-1">
+        {/* 目录 */}
+        {tocOpen && (
+          <aside className="hidden w-56 shrink-0 overflow-y-auto border-r border-black/5 bg-white px-4 py-5 md:block dark:border-white/10 dark:bg-[#1a1a1d]">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium text-neutral-500">目录</span>
+              <button
+                type="button"
+                onClick={() => setTocOpen(false)}
+                className="text-neutral-400 hover:text-neutral-600"
+              >
+                ✕
+              </button>
+            </div>
+            {toc.length === 0 ? (
+              <p className="text-xs leading-6 text-neutral-400">
+                对文档内容应用「标题」样式
+                <br />
+                即可生成目录
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {toc.map((h, i) => (
+                  <li key={`${h.line}-${i}`}>
+                    <button
+                      type="button"
+                      onClick={() => editorRef.current?.gotoLine(h.line)}
+                      className="w-full truncate text-left text-xs text-neutral-600 hover:text-sky-500 dark:text-neutral-400"
+                      style={{ paddingLeft: (h.level - 1) * 12 }}
+                    >
+                      {h.text || "未命名标题"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+        )}
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input
-          value={tags}
-          onChange={e => setTags(e.target.value)}
-          placeholder="标签，用逗号或空格分隔（可留空）"
-          className="w-full rounded-xl border border-black/10 bg-white px-4 py-2.5 text-sm outline-none focus:border-neutral-400 sm:max-w-sm dark:border-white/10 dark:bg-white/5"
-        />
-        <div className="flex items-center gap-2">
-          {hint && <span className="text-xs text-amber-600">{hint}</span>}
+        {/* 编辑区 */}
+        <main className="min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-6 py-8">
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value.slice(0, 80))}
+              placeholder="请输入标题（建议30字以内）"
+              className="mb-6 w-full border-0 bg-transparent text-3xl font-bold tracking-tight outline-none placeholder:text-neutral-300 dark:placeholder:text-neutral-700"
+            />
+            <MarkdownEditor
+              ref={editorRef}
+              value={content}
+              onChange={setContent}
+              onImage={upload}
+              onError={setHint}
+              placeholder="开始写作…  直接粘贴截图，图片会自动上传并显示在这里"
+            />
+            <div className="mt-3 flex items-center justify-between text-xs text-neutral-400">
+              <span>{hint && <span className="text-amber-600">{hint}</span>}</span>
+              <span>
+                {content.length}/{MAX_CHARS}
+              </span>
+            </div>
+          </div>
+        </main>
+
+        {/* 手机预览 */}
+        {previewOpen && (
+          <aside className="hidden w-[340px] shrink-0 flex-col border-l border-black/5 bg-white px-4 py-4 lg:flex dark:border-white/10 dark:bg-[#1a1a1d]">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium text-neutral-500">预览</span>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(false)}
+                className="text-neutral-400 hover:text-neutral-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div
+              className={`flex-1 overflow-y-auto rounded-[28px] border-8 ${
+                night ? "border-neutral-800 bg-[#141416]" : "border-neutral-200 bg-white"
+              } px-4 py-4`}
+            >
+              <h1
+                className={`mb-2 text-base font-bold leading-snug ${
+                  night ? "text-neutral-100" : "text-neutral-900"
+                }`}
+              >
+                {title || "请输入标题"}
+              </h1>
+              <div className={`text-[11px] text-neutral-400 ${night ? "dark" : ""}`}>
+                {night ? (
+                  <div className="md-body text-[11px] leading-6 text-neutral-300">
+                    <div dangerouslySetInnerHTML={{ __html: html }} />
+                  </div>
+                ) : (
+                  <div className="md-body text-[11px] leading-6">
+                    <div dangerouslySetInnerHTML={{ __html: html }} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <label className="mt-3 flex items-center justify-end gap-2 text-xs text-neutral-500">
+              夜间模式
+              <input
+                type="checkbox"
+                checked={night}
+                onChange={e => setNight(e.target.checked)}
+                className="h-4 w-4 accent-neutral-800"
+              />
+            </label>
+          </aside>
+        )}
+      </div>
+
+      {/* ============ 底部操作栏 ============ */}
+      <div className="border-t border-black/5 bg-white px-4 py-3 dark:border-white/10 dark:bg-[#1a1a1d]">
+        {settingsOpen && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-black/10 p-3 dark:border-white/10">
+            <span className="text-xs text-neutral-500">标签</span>
+            <input
+              value={tags}
+              onChange={e => setTags(e.target.value)}
+              placeholder="用逗号或空格分隔，可留空"
+              className="min-w-[240px] flex-1 rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
+            />
+          </div>
+        )}
+        <div className="flex items-center justify-between">
           <button
             type="button"
-            onClick={() => setPreview(v => !v)}
-            className="rounded-xl border border-black/10 px-4 py-2.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+            onClick={() => setSettingsOpen(v => !v)}
+            className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-neutral-600 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
           >
-            {preview ? "继续写" : "预览"}
+            发布设置
+            <span className={`transition-transform ${settingsOpen ? "rotate-180" : ""}`}>⌄</span>
           </button>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={() => submit(true)}
-            className="rounded-xl border border-black/10 px-4 py-2.5 text-sm hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/10"
-          >
-            存草稿
-          </button>
-          <button
-            type="button"
-            disabled={submitting || uploading}
-            onClick={() => submit(false)}
-            className="rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 dark:bg-white dark:text-black"
-          >
-            {submitting ? "发布中…" : editId ? "保存修改" : "发布"}
-          </button>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => submit(true)}
+              className="rounded-lg border border-neutral-300 px-5 py-2 text-sm text-neutral-700 hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:text-neutral-200 dark:hover:bg-white/10"
+            >
+              保存为草稿
+            </button>
+            <button
+              type="button"
+              disabled={submitting || uploading}
+              onClick={() => submit(false)}
+              className="rounded-lg bg-[#00aeec] px-7 py-2 text-sm font-medium text-white hover:bg-[#009dd6] disabled:opacity-50"
+            >
+              {submitting ? "发布中…" : editId ? "保存修改" : "发布"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -28,9 +28,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "未登录" }, { status: 401 });
     }
 
+    // 任何登录用户都可以上传图片（写文章时粘贴截图）
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.is_admin) {
-      return NextResponse.json({ error: "需要管理员权限" }, { status: 403 });
+    if (!user) {
+      return NextResponse.json({ error: "账号不存在" }, { status: 403 });
     }
 
     const formData = await request.formData();

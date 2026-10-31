@@ -19,6 +19,7 @@ export type EditorHandle = {
   insert: (text: string) => void;
   wrap: (before: string, after: string) => void;
   insertBlock: (prefix: string, fallback?: string) => void;
+  gotoLine: (line: number) => void;
 };
 
 type Props = {
@@ -188,6 +189,17 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
       v.dispatch({
         changes: { from: line.from, to: line.to, insert: `${prefix}${selected}` },
         selection: { anchor: line.from + prefix.length + selected.length }
+      });
+      v.focus();
+    },
+    gotoLine: (lineNumber: number) => {
+      const v = view.current;
+      if (!v) return;
+      const total = v.state.doc.lines;
+      const line = v.state.doc.line(Math.min(Math.max(1, lineNumber + 1), total));
+      v.dispatch({
+        selection: { anchor: line.from },
+        scrollIntoView: true
       });
       v.focus();
     }
