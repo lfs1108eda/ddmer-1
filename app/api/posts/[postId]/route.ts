@@ -31,6 +31,13 @@ function toPostDetail(post: any) {
   };
 }
 
+/** 校验：管理员可操作任意文章，普通用户只能操作自己的 */
+async function assertCanEdit(userId: number, authorId: number | null) {
+  const me = await prisma.user.findUnique({ where: { id: userId } });
+  if (me?.is_admin) return true;
+  return authorId === userId;
+}
+
 function generateSlug(name: string): string {
   return name
     .toLowerCase()
@@ -86,7 +93,7 @@ export async function PUT(
   { params }: { params: Promise<{ postId: string }> }
 ) {
   try {
-    await getCurrentUser(req);
+    const me: any = await getCurrentUser(req);
     const { postId } = await params;
     const id = parseInt(postId, 10);
     if (isNaN(id)) {
@@ -99,6 +106,9 @@ export async function PUT(
     });
     if (!existing) {
       return NextResponse.json({ error: "文章不存在" }, { status: 404 });
+    }
+    if (!(await assertCanEdit(Number(me.sub), existing.author_id))) {
+      return NextResponse.json({ error: "无权修改他人的文章" }, { status: 403 });
     }
 
     const body = await req.json();
@@ -240,7 +250,7 @@ export async function DELETE(
   { params }: { params: Promise<{ postId: string }> }
 ) {
   try {
-    await getCurrentUser(req);
+    const me: any = await getCurrentUser(req);
     const { postId } = await params;
     const id = parseInt(postId, 10);
     if (isNaN(id)) {
@@ -253,6 +263,9 @@ export async function DELETE(
     });
     if (!existing) {
       return NextResponse.json({ error: "文章不存在" }, { status: 404 });
+    }
+    if (!(await assertCanEdit(Number(me.sub), existing.author_id))) {
+      return NextResponse.json({ error: "无权删除他人的文章" }, { status: 403 });
     }
 
     // 删除封面图及正文引用的 R2 图片

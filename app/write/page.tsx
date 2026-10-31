@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { marked } from "marked";
 import MarkdownEditor, { type EditorHandle } from "@/components/editor/MarkdownEditor";
 import { authHeaders, getToken, slugify } from "@/app/lib/client-auth";
@@ -18,7 +18,7 @@ type Tool = {
 const TOOLS: Tool[] = [
   { key: "h2", label: "H2", title: "二级标题", run: e => e.insertBlock("## ", "小标题") },
   { key: "h3", label: "H3", title: "三级标题", run: e => e.insertBlock("### ", "小标题") },
-  { key: "bold", label: "B", title: "加粗 (Ctrl+B)", run: e => e.wrap("**", "**") },
+  { key: "bold", label: "B", title: "加粗", run: e => e.wrap("**", "**") },
   { key: "italic", label: "I", title: "斜体", run: e => e.wrap("*", "*") },
   { key: "strike", label: "S", title: "删除线", run: e => e.wrap("~~", "~~") },
   { key: "quote", label: "❝", title: "引用", run: e => e.insertBlock("> ", "引用内容") },
@@ -29,8 +29,11 @@ const TOOLS: Tool[] = [
   { key: "line", label: "—", title: "分割线", run: e => e.insert("\n\n---\n\n") }
 ];
 
-export default function WritePage() {
+function WriteInner() {
   const router = useRouter();
+  const params = useSearchParams();
+  const editId = params.get("id");
+
   const editorRef = useRef<EditorHandle>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -42,11 +45,27 @@ export default function WritePage() {
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [hint, setHint] = useState("");
-  const [savedAt, setSavedAt] = useState<string>("");
+  const [savedAt, setSavedAt] = useState("");
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login?next=/write");
+      return;
+    }
+    if (editId) {
+      fetch(`/api/posts/${editId}?raw=1`, { headers: authHeaders() })
+        .then(r => (r.ok ? r.json() : null))
+        .then(post => {
+          if (!post) {
+            setHint("文章不存在或无权编辑");
+            return;
+          }
+          setTitle(post.title ?? "");
+          setContent(post.content ?? "");
+          setTags(Array.isArray(post.tags) ? post.tags.join(" ") : "");
+        })
+        .catch(() => setHint("加载文章失败"))
+        .finally(() => setReady(true));
       return;
     }
     try {
@@ -62,23 +81,20 @@ export default function WritePage() {
       /* 忽略损坏的草稿 */
     }
     setReady(true);
-  }, [router]);
+  }, [router, editId]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || editId) return;
     const timer = setTimeout(() => {
       try {
-        localStorage.setItem(
-          DRAFT_KEY,
-          JSON.stringify({ title, content, tags, at: Date.now() })
-        );
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, content, tags, at: Date.now() }));
         setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
       } catch {
-        /* 存储满时忽略 */
+        /* 忽略 */
       }
     }, 800);
     return () => clearTimeout(timer);
-  }, [title, content, tags, ready]);
+  }, [title, content, tags, ready, editId]);
 
   const html = useMemo(() => (preview ? (marked.parse(content) as string) : ""), [content, preview]);
   const wordCount = useMemo(() => content.replace(/\s/g, "").length, [content]);
@@ -111,23 +127,21 @@ export default function WritePage() {
     if (!content.trim()) return setHint("正文还是空的");
     setSubmitting(true);
     try {
-      const res = await fetch("/api/posts", {
-        method: "POST",
+      const payload = {
+        title: title.trim(),
+        slug: slugify(title),
+        description: content.replace(/[#>*`\-\[\]()!]/g, "").replace(/\s+/g, " ").slice(0, 120),
+        content,
+        status: asDraft ? "draft" : "published",
+        tags: tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean)
+      };
+      const res = await fetch(editId ? `/api/posts/${editId}` : "/api/posts", {
+        method: editId ? "PUT" : "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({
-          title: title.trim(),
-          slug: slugify(title),
-          description: content
-            .replace(/[#>*`\-\[\]()!]/g, "")
-            .replace(/\s+/g, " ")
-            .slice(0, 120),
-          content,
-          status: asDraft ? "draft" : "published",
-          tags: tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean)
-        })
+        body: JSON.stringify(payload)
       });
       const json = await res.json();
-      if (!res.ok) return setHint(json?.error || "发布失败");
+      if (!res.ok) return setHint(json?.error || "保存失败");
       localStorage.removeItem(DRAFT_KEY);
       router.push(asDraft ? "/me" : `/posts/${json.slug ?? slugify(title)}`);
       router.refresh();
@@ -142,7 +156,6 @@ export default function WritePage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl px-5 py-8">
-      {/* 标题 */}
       <input
         value={title}
         onChange={e => setTitle(e.target.value)}
@@ -150,7 +163,6 @@ export default function WritePage() {
         className="w-full border-0 bg-transparent text-3xl font-bold tracking-tight outline-none placeholder:text-neutral-300 dark:placeholder:text-neutral-700"
       />
 
-      {/* 工具栏 */}
       <div className="sticky top-16 z-20 my-3 flex flex-wrap items-center gap-1 rounded-xl border border-black/10 bg-white/90 px-2 py-1.5 backdrop-blur dark:border-white/10 dark:bg-[#1c1c1e]/90">
         {TOOLS.map(tool => (
           <button
@@ -207,7 +219,6 @@ export default function WritePage() {
         />
       )}
 
-      {/* 底部操作 */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <input
           value={tags}
@@ -238,10 +249,18 @@ export default function WritePage() {
             onClick={() => submit(false)}
             className="rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 dark:bg-white dark:text-black"
           >
-            {submitting ? "发布中…" : "发布"}
+            {submitting ? "发布中…" : editId ? "保存修改" : "发布"}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function WritePage() {
+  return (
+    <Suspense fallback={null}>
+      <WriteInner />
+    </Suspense>
   );
 }

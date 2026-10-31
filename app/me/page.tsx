@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authHeaders, clearSession, getToken } from "@/app/lib/client-auth";
@@ -31,18 +31,43 @@ export default function MyPostsPage() {
   const router = useRouter();
   const [posts, setPosts] = useState<MyPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch("/api/posts?mine=1&size=50", { headers: authHeaders() })
+      .then(r => (r.ok ? r.json() : []))
+      .then(setPosts)
+      .catch(() => setPosts([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login?next=/me");
       return;
     }
-    fetch("/api/posts?mine=1&size=50", { headers: authHeaders() })
-      .then(r => (r.ok ? r.json() : []))
-      .then(setPosts)
-      .catch(() => setPosts([]))
-      .finally(() => setLoading(false));
-  }, [router]);
+    load();
+  }, [router, load]);
+
+  async function remove(post: MyPost) {
+    if (!window.confirm(`确定删除《${post.title}》？删除后无法恢复。`)) return;
+    setBusyId(post.id);
+    try {
+      const res = await fetch(`/api/posts/${post.id}`, {
+        method: "DELETE",
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        setPosts(list => list.filter(p => p.id !== post.id));
+      } else {
+        const json = await res.json().catch(() => ({}));
+        window.alert(json?.error || "删除失败");
+      }
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-3xl px-5 py-10">
@@ -82,9 +107,9 @@ export default function MyPostsPage() {
           {posts.map(post => (
             <li
               key={post.id}
-              className="flex items-center justify-between gap-4 rounded-xl border border-black/10 px-4 py-3 dark:border-white/10"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 px-4 py-3 dark:border-white/10"
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">
                   {post.status === "published" ? (
                     <Link href={`/posts/${post.slug}`} className="hover:underline">
@@ -98,13 +123,30 @@ export default function MyPostsPage() {
                   {new Date(post.created_at).toLocaleDateString("zh-CN")}
                 </div>
               </div>
-              <span
-                className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${
-                  STATUS_STYLE[post.status] ?? STATUS_STYLE.draft
-                }`}
-              >
-                {STATUS_TEXT[post.status] ?? post.status}
-              </span>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-xs ${
+                    STATUS_STYLE[post.status] ?? STATUS_STYLE.draft
+                  }`}
+                >
+                  {STATUS_TEXT[post.status] ?? post.status}
+                </span>
+                <Link
+                  href={`/write?id=${post.id}`}
+                  className="rounded-lg border border-black/10 px-2.5 py-1 text-xs hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+                >
+                  编辑
+                </Link>
+                <button
+                  type="button"
+                  disabled={busyId === post.id}
+                  onClick={() => remove(post)}
+                  className="rounded-lg border border-red-500/30 px-2.5 py-1 text-xs text-red-500 hover:bg-red-500/10 disabled:opacity-50"
+                >
+                  {busyId === post.id ? "删除中…" : "删除"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>
