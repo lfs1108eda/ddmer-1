@@ -130,6 +130,7 @@ onMounted(() => onSearch());
                 onSearch();
               "
             >
+              <el-option label="待审核" value="pending" />
               <el-option label="已发布" value="published" />
               <el-option label="草稿" value="draft" />
               <el-option label="已归档" value="archived" />
@@ -172,18 +173,22 @@ onMounted(() => onSearch());
             :type="
               row.status === 'published'
                 ? 'success'
-                : row.status === 'draft'
-                  ? 'info'
-                  : 'warning'
+                : row.status === 'pending'
+                  ? 'warning'
+                  : row.status === 'draft'
+                    ? 'info'
+                    : 'info'
             "
             size="small"
           >
             {{
               row.status === "published"
                 ? "已发布"
-                : row.status === "draft"
-                  ? "草稿"
-                  : "已归档"
+                : row.status === "pending"
+                  ? "待审核"
+                  : row.status === "draft"
+                    ? "草稿"
+                    : "已归档"
             }}
           </el-tag>
         </template>
