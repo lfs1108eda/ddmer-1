@@ -43,11 +43,27 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status") || undefined;
+    const mine = searchParams.get("mine") === "1";
     const categorySlug = searchParams.get("category") || undefined;
     const tagSlug = searchParams.get("tag") || undefined;
     const keyword = searchParams.get("keyword") || undefined;
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
     const size = Math.max(1, parseInt(searchParams.get("size") || "10", 10));
+
+    // 判断当前访问者身份：匿名/普通用户只能看已发布文章
+    let viewer: any = null;
+    try {
+      viewer = await getCurrentUser(req);
+    } catch {
+      // 匿名访问
+    }
+    let viewerIsAdmin = false;
+    if (viewer?.sub) {
+      const v = await prisma.user.findUnique({
+        where: { id: Number(viewer.sub) },
+      });
+      viewerIsAdmin = !!v?.is_admin;
+    }
 
     let categoryId: number | undefined;
     if (categorySlug) {
@@ -66,7 +82,17 @@ export async function GET(req: NextRequest) {
     }
 
     const where: any = {};
-    if (status) where.status = status;
+    if (mine) {
+      if (!viewer?.sub) {
+        return NextResponse.json({ error: "未登录" }, { status: 401 });
+      }
+      where.author_id = Number(viewer.sub);
+      if (status) where.status = status;
+    } else if (viewerIsAdmin) {
+      if (status) where.status = status;
+    } else {
+      where.status = "published";
+    }
     if (categoryId) where.category_id = categoryId;
     if (tagId) {
       where.tags = { some: { tag_id: tagId } };
@@ -100,7 +126,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await getCurrentUser(req);
+    const viewer: any = await getCurrentUser(req);
+    const viewerRow = await prisma.user.findUnique({
+      where: { id: Number(viewer.sub) },
+    });
+    const isAdmin = !!viewerRow?.is_admin;
     const body = await req.json();
     const {
       title,
@@ -138,8 +168,9 @@ export async function POST(req: NextRequest) {
           content: content || "",
           cover: cover || "",
           category_id: category_id || null,
-          status: status || "draft",
-          is_pinned: is_pinned || false,
+          status: isAdmin ? status || "draft" : "pending",
+          author_id: Number(viewer.sub) || null,
+          is_pinned: isAdmin ? is_pinned || false : false,
           word_count,
           reading_time,
           published_at,

@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useConfigValue } from "@/components/providers/SiteConfigProvider";
 import { siteConfig } from "@/siteConfig";
-import { BookOpen, Moon, Sun } from "lucide-react";
+import { getToken } from "@/app/lib/client-auth";
+import { BookOpen, Moon, PenLine, Sun, User } from "lucide-react";
 
 const navLinks = [{ href: "/posts", label: "文章", icon: BookOpen }];
 
@@ -13,6 +15,11 @@ export default function Navbar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const siteTitle = useConfigValue("title", siteConfig.title) || "博客";
+  const [logged, setLogged] = useState(false);
+
+  useEffect(() => {
+    setLogged(!!getToken());
+  }, [pathname]);
 
   return (
     <header className="fixed top-0 inset-x-0 z-50 h-16 border-b border-black/5 dark:border-white/10 bg-white/70 dark:bg-black/40 backdrop-blur-xl">
@@ -43,6 +50,33 @@ export default function Navbar() {
               </Link>
             );
           })}
+
+          {logged ? (
+            <>
+              <Link
+                href="/write"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              >
+                <PenLine className="h-4 w-4" />
+                写文章
+              </Link>
+              <Link
+                href="/me"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+              >
+                <User className="h-4 w-4" />
+                我的
+              </Link>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-neutral-500 transition-colors hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
+            >
+              <User className="h-4 w-4" />
+              登录
+            </Link>
+          )}
 
           <button
             type="button"

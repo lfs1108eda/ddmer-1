@@ -20,6 +20,8 @@ model User {
   created_at      DateTime @default(now())
   updated_at      DateTime @default(now()) @updatedAt
 
+  posts Post[]
+
   @@map("user")
 }
 
@@ -53,6 +55,7 @@ model Post {
   content       String    @default("")
   cover         String    @default("")
   category_id   Int?
+  author_id     Int?
   status        String    @default("draft")
   is_pinned     Boolean   @default(false)
   views         Int       @default(0)
@@ -64,12 +67,14 @@ model Post {
   updated_at    DateTime  @default(now()) @updatedAt
 
   category Category? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  author   User?     @relation(fields: [author_id], references: [id], onDelete: SetNull)
   tags     PostTag[]
   comments Comment[]
 
   @@index([slug])
   @@index([status])
   @@index([category_id])
+  @@index([author_id])
 }
 
 model PostTag {
