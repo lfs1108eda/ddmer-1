@@ -14,6 +14,30 @@ const COLORS = ["#e11d48", "#ea580c", "#16a34a", "#2563eb", "#7c3aed", "#71717a"
 
 type Heading = { text: string; level: number; line: number };
 
+/** 大图先压缩，避免超过 4.5MB 请求体上限 */
+async function compressImage(file: File): Promise<File> {
+  if (file.size <= 2 * 1024 * 1024) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxEdge = 2000;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>(res => canvas.toBlob(res, "image/jpeg", 0.9));
+    if (blob && blob.size < file.size) {
+      const name = (file.name.replace(/\.[^.]+$/, "") || "image") + ".jpg";
+      return new File([blob], name, { type: "image/jpeg" });
+    }
+  } catch {
+    /* 压缩失败就用原图 */
+  }
+  return file;
+}
+
 function WriteInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -102,10 +126,15 @@ function WriteInner() {
 
   /* ---------------- 图片 ---------------- */
   const upload = useCallback(async (files: File[]): Promise<string | null> => {
+    if (!getToken()) {
+      setHint("登录状态已失效，请重新登录后再上传图片");
+      return null;
+    }
     setUploading(true);
     try {
       const parts: string[] = [];
-      for (const file of files) {
+      for (const original of files) {
+        const file = await compressImage(original);
         const form = new FormData();
         form.append("file", file);
         let res: Response;
@@ -120,8 +149,16 @@ function WriteInner() {
           return null;
         }
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          setHint(`图片上传失败（${res.status}）：${err.error ?? "未知错误"}`);
+          let detail = "";
+          try {
+            const j = await res.json();
+            detail = j?.error ?? "";
+          } catch {
+            /* 响应不是 JSON */
+          }
+          setHint(
+            `图片上传失败（HTTP ${res.status}${detail ? "：" + detail.slice(0, 60) : ""}）`
+          );
           return null;
         }
         const json = await res.json();

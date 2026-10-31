@@ -221,11 +221,7 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
       if (!files.length) return;
       onImageRef.current(files)
         .then(text => {
-          if (!view.current) return;
-          if (!text) {
-            onErrorRef.current?.("图片上传失败，请检查网络或登录状态后重试");
-            return;
-          }
+          if (!view.current || !text) return; // 失败提示由上传逻辑负责
           const { from } = view.current.state.selection.main;
           view.current.dispatch({
             changes: { from, insert: text },
