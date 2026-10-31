@@ -97,7 +97,7 @@ function handleEdit(row: PostItem) {
 }
 
 function handleCreate() {
-  router.push("/post/edit");
+  router.push("/create/index");
 }
 
 async function handleDelete(row: PostItem) {
