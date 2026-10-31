@@ -197,8 +197,8 @@ function WriteInner() {
     <div className="flex h-[calc(100vh-4rem)] flex-col bg-[#f4f5f7] dark:bg-[#0f0f11]">
       {/* ============ 顶部工具栏 ============ */}
       <div className="flex flex-wrap items-center gap-0.5 border-b border-black/5 bg-white px-3 py-1.5 dark:border-white/10 dark:bg-[#1a1a1d]">
-        <ToolBtn title="二级标题" onClick={() => editorRef.current?.insertBlock("## ", "小标题")}>H2</ToolBtn>
-        <ToolBtn title="三级标题" onClick={() => editorRef.current?.insertBlock("### ", "小标题")}>H3</ToolBtn>
+        <ToolBtn title="二级标题" onClick={() => editorRef.current?.insertBlock("## ")}>H2</ToolBtn>
+        <ToolBtn title="三级标题" onClick={() => editorRef.current?.insertBlock("### ")}>H3</ToolBtn>
         <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
         <ToolBtn title="加粗" onClick={() => editorRef.current?.wrap("**", "**")}><b>B</b></ToolBtn>
         <ToolBtn title="斜体" onClick={() => editorRef.current?.wrap("*", "*")}><i>I</i></ToolBtn>
@@ -231,9 +231,9 @@ function WriteInner() {
         </div>
 
         <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
-        <ToolBtn title="无序列表" onClick={() => editorRef.current?.insertBlock("- ", "列表项")}>☰</ToolBtn>
-        <ToolBtn title="有序列表" onClick={() => editorRef.current?.insertBlock("1. ", "列表项")}>1.</ToolBtn>
-        <ToolBtn title="引用" onClick={() => editorRef.current?.insertBlock("> ", "引用内容")}>❝</ToolBtn>
+        <ToolBtn title="无序列表" onClick={() => editorRef.current?.insertBlock("- ")}>☰</ToolBtn>
+        <ToolBtn title="有序列表" onClick={() => editorRef.current?.insertBlock("1. ")}>1.</ToolBtn>
+        <ToolBtn title="引用" onClick={() => editorRef.current?.insertBlock("> ")}>❝</ToolBtn>
         <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
         <ToolBtn title="插入图片" onClick={() => fileRef.current?.click()}>🖼</ToolBtn>
         <ToolBtn title="链接" onClick={() => editorRef.current?.wrap("[", "](https://)")}>🔗</ToolBtn>

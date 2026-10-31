@@ -18,7 +18,7 @@ export type EditorHandle = {
   focus: () => void;
   insert: (text: string) => void;
   wrap: (before: string, after: string) => void;
-  insertBlock: (prefix: string, fallback?: string) => void;
+  insertBlock: (prefix: string) => void;
   gotoLine: (line: number) => void;
 };
 
@@ -180,16 +180,25 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
       });
       v.focus();
     },
-    insertBlock: (prefix: string, fallback = "标题") => {
+    insertBlock: (prefix: string) => {
       const v = view.current;
       if (!v) return;
       const { from, to } = v.state.selection.main;
       const line = v.state.doc.lineAt(from);
-      const selected = v.state.sliceDoc(from, to) || fallback;
-      v.dispatch({
-        changes: { from: line.from, to: line.to, insert: `${prefix}${selected}` },
-        selection: { anchor: line.from + prefix.length + selected.length }
-      });
+      const selected = v.state.sliceDoc(from, to);
+      if (selected) {
+        // 有选中内容：在行首插入标记，保留原文
+        v.dispatch({
+          changes: { from: line.from, insert: prefix },
+          selection: { anchor: line.from + prefix.length, head: to + prefix.length }
+        });
+      } else {
+        // 没选中：只插入标记本身，光标落在后面
+        v.dispatch({
+          changes: { from: line.from, insert: prefix },
+          selection: { anchor: line.from + prefix.length }
+        });
+      }
       v.focus();
     },
     gotoLine: (lineNumber: number) => {
