@@ -434,7 +434,7 @@ export default function PostDetailPage() {
               }
             `}</style>
             <div
-              className="post-content prose prose-sm sm:prose-base md:prose-lg dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 leading-relaxed"
+              className="post-content md-body prose prose-sm sm:prose-base md:prose-lg dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 leading-relaxed"
               onClick={handleContentClick}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content) }}
             />

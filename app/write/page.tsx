@@ -49,6 +49,15 @@ const TOOLS: Tool[] = [
   }
 ];
 
+const COLORS = [
+  { name: "红", value: "#e11d48" },
+  { name: "橙", value: "#ea580c" },
+  { name: "绿", value: "#16a34a" },
+  { name: "蓝", value: "#2563eb" },
+  { name: "紫", value: "#7c3aed" },
+  { name: "灰", value: "#71717a" }
+];
+
 function WriteInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -133,7 +142,12 @@ function WriteInner() {
         });
         if (!res.ok) continue;
         const json = await res.json();
-        if (json?.url) parts.push(`\n\n![${file.name}](${json.url})\n\n`);
+        if (json?.url) {
+          const alt = file.name.replace(/\.[^.]+$/, "") || "图片";
+          parts.push(
+            `\n\n![${alt}](${json.url})\n\n<span class="img-cap">给这张图写个图注</span>\n\n`
+          );
+        }
       }
       return parts.length ? parts.join("") : null;
     } finally {
@@ -217,6 +231,19 @@ function WriteInner() {
             e.target.value = "";
           }}
         />
+        <span className="mx-1 h-5 w-px bg-black/10 dark:bg-white/15" />
+        {COLORS.map(color => (
+          <button
+            key={color.value}
+            type="button"
+            title={`文字颜色：${color.name}`}
+            onClick={() =>
+              editorRef.current?.wrap(`<span style="color:${color.value}">`, "</span>")
+            }
+            className="h-4 w-4 rounded-full border border-black/10 transition-transform hover:scale-125 dark:border-white/20"
+            style={{ background: color.value }}
+          />
+        ))}
         <div className="ml-auto flex items-center gap-3 pr-1 text-xs text-neutral-400">
           {uploading && <span className="text-sky-500">图片上传中…</span>}
           {savedAt && <span>已自动保存 {savedAt}</span>}
@@ -226,7 +253,7 @@ function WriteInner() {
 
       {preview ? (
         <article
-          className="prose prose-neutral max-w-none rounded-xl border border-black/10 bg-white p-6 dark:prose-invert dark:border-white/10 dark:bg-[#1c1c1e]"
+          className="md-body rounded-2xl border border-black/10 bg-white px-7 py-6 shadow-sm dark:border-white/10 dark:bg-[#1c1c1e]"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
