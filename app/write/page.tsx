@@ -164,9 +164,7 @@ function WriteInner() {
         const json = await res.json();
         if (json?.url) {
           const alt = file.name.replace(/\.[^.]+$/, "") || "图片";
-          parts.push(
-            `\n\n![${alt}](${json.url})\n\n<span class="img-cap">给这张图写个图注</span>\n\n`
-          );
+          parts.push(`\n\n![${alt}](${json.url})\n\n`);
         }
       }
       if (!parts.length) return null;

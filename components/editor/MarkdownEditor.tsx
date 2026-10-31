@@ -9,7 +9,7 @@ import {
   WidgetType
 } from "@codemirror/view";
 import type { ViewUpdate } from "@codemirror/view";
-import { EditorState, RangeSetBuilder } from "@codemirror/state";
+import { EditorState, RangeSetBuilder, StateField } from "@codemirror/state";
 import { basicSetup } from "codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -62,42 +62,36 @@ class ImageWidget extends WidgetType {
   }
 }
 
-function buildImageDecorations(view: EditorView): DecorationSet {
+function buildImageDecorations(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
-  const sel = view.state.selection.main;
+  const sel = state.selection.main;
+  const text = state.doc.toString();
 
-  for (const { from, to } of view.visibleRanges) {
-    const text = view.state.doc.sliceString(from, to);
-    IMAGE_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = IMAGE_RE.exec(text))) {
-      const start = from + m.index;
-      const end = start + m[0].length;
-      if (sel.from <= end && sel.to >= start) continue;
-      builder.add(
-        start,
-        end,
-        Decoration.replace({ widget: new ImageWidget(m[2], m[1]) })
-      );
-    }
+  IMAGE_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = IMAGE_RE.exec(text))) {
+    const start = m.index;
+    const end = start + m[0].length;
+    // 光标停在图片语法上时显示源码，方便修改
+    if (sel.from <= end && sel.to >= start) continue;
+    if (text.slice(start, end).includes("\n")) continue;
+    builder.add(
+      start,
+      end,
+      Decoration.replace({ widget: new ImageWidget(m[2], m[1]) })
+    );
   }
   return builder.finish();
 }
 
-const imagePlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-    constructor(view: EditorView) {
-      this.decorations = buildImageDecorations(view);
-    }
-    update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged || update.selectionSet) {
-        this.decorations = buildImageDecorations(update.view);
-      }
-    }
+const imageField = StateField.define<DecorationSet>({
+  create: state => buildImageDecorations(state),
+  update(deco, tr) {
+    if (tr.docChanged || tr.selection) return buildImageDecorations(tr.state);
+    return deco.map(tr.changes);
   },
-  { decorations: value => value.decorations }
-);
+  provide: field => EditorView.decorations.from(field)
+});
 
 /** 从剪贴板事件里尽量取出图片文件（截图工具/网页复制的实现差异很大） */
 export function filesFromClipboard(data: DataTransfer | null): File[] {
@@ -263,7 +257,7 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
         basicSetup,
         markdown(),
         dark ? oneDark : [],
-        imagePlugin,
+        imageField,
         handlers,
         EditorView.lineWrapping,
         EditorView.theme({
