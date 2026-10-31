@@ -67,6 +67,54 @@ export default function PostCard({ post, index }: PostCardProps) {
     })
     : "";
 
+  // 没有封面时，用纯文字卡片（更紧凑）
+  if (!post.cover) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: index * 0.06, ease: "easeOut" }}
+      >
+        <Link href={`/posts/${post.slug}`}>
+          <article className="flex h-full flex-col justify-between rounded-2xl border border-black/10 bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg dark:border-white/10 dark:bg-[#1c1c1e]">
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-xs text-neutral-400">
+                {post.category && (
+                  <span className="rounded bg-black/5 px-1.5 py-0.5 dark:bg-white/10">
+                    {post.category}
+                  </span>
+                )}
+                {post.is_pinned && (
+                  <span className="flex items-center gap-0.5 text-amber-500">
+                    <Pin className="h-3 w-3" />
+                    置顶
+                  </span>
+                )}
+              </div>
+              <h3 className="text-base font-bold leading-snug text-neutral-900 line-clamp-2 dark:text-neutral-100">
+                {post.title}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-neutral-500 line-clamp-2 dark:text-neutral-400">
+                {post.description || "……"}
+              </p>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-neutral-400">
+              {dateStr && <span>{dateStr}</span>}
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {post.reading_time || 1} 分钟
+              </span>
+              <span className="flex items-center gap-1">
+                <Eye className="h-3 w-3" />
+                {post.views}
+              </span>
+            </div>
+          </article>
+        </Link>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 40 }}

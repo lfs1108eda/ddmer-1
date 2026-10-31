@@ -64,6 +64,9 @@ function WriteInner() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tags, setTags] = useState("");
+  const [cover, setCover] = useState("");
+  const [coverUploading, setCoverUploading] = useState(false);
+  const coverRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [hint, setHint] = useState("");
@@ -89,6 +92,7 @@ function WriteInner() {
           setTitle(post.title ?? "");
           setContent(post.content ?? "");
           setTags(Array.isArray(post.tags) ? post.tags.join(" ") : "");
+          setCover(post.cover ?? "");
         })
         .catch(() => setHint("加载文章失败"))
         .finally(() => setReady(true));
@@ -101,6 +105,7 @@ function WriteInner() {
         setTitle(draft.title ?? "");
         setContent(draft.content ?? "");
         setTags(draft.tags ?? "");
+        setCover(draft.cover ?? "");
         if (draft.content) setHint("已恢复上次未发布的内容");
       }
     } catch {
@@ -114,14 +119,14 @@ function WriteInner() {
     if (!ready || editId) return;
     const timer = setTimeout(() => {
       try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, content, tags, at: Date.now() }));
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, content, tags, cover, at: Date.now() }));
         setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }).slice(0, 5));
       } catch {
         /* 忽略 */
       }
     }, 800);
     return () => clearTimeout(timer);
-  }, [title, content, tags, ready, editId]);
+  }, [title, content, tags, cover, ready, editId]);
 
   /* ---------------- 派生数据 ---------------- */
   const html = useMemo(() => renderMarkdown(content), [content]);
@@ -189,6 +194,32 @@ function WriteInner() {
     }
   }, []);
 
+  async function uploadCover(file: File) {
+    setCoverUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/upload/image", {
+        method: "POST",
+        headers: authHeaders(),
+        body: form
+      });
+      if (!res.ok) {
+        setHint(`封面上传失败（HTTP ${res.status}）`);
+        return;
+      }
+      const json = await res.json();
+      if (json?.url) {
+        setCover(json.url);
+        setHint("");
+      }
+    } catch {
+      setHint("封面上传失败，请检查网络");
+    } finally {
+      setCoverUploading(false);
+    }
+  }
+
   /* ---------------- 提交 ---------------- */
   async function submit(asDraft: boolean) {
     setHint("");
@@ -201,6 +232,7 @@ function WriteInner() {
         slug: slugify(title),
         description: buildDescription(content),
         content,
+        cover,
         status: asDraft ? "draft" : "published",
         tags: tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean)
       };
@@ -456,6 +488,42 @@ function WriteInner() {
       <div className="border-t border-black/5 bg-white px-4 py-3 dark:border-white/10 dark:bg-[#1a1a1d]">
         {settingsOpen && (
           <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-black/10 p-3 dark:border-white/10">
+            <span className="text-xs text-neutral-500">封面（可选）</span>
+            <div className="flex items-center gap-2">
+              <div
+                onClick={() => coverRef.current?.click()}
+                className="flex h-16 w-28 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed border-neutral-300 text-[11px] text-neutral-400 hover:border-sky-400 dark:border-white/20"
+              >
+                {cover ? (
+                  <img src={cover} alt="封面" className="h-full w-full object-cover" />
+                ) : coverUploading ? (
+                  "上传中…"
+                ) : (
+                  "上传封面"
+                )}
+              </div>
+              {cover && (
+                <button
+                  type="button"
+                  onClick={() => setCover("")}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  移除
+                </button>
+              )}
+              <input
+                ref={coverRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadCover(f);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+
             <span className="text-xs text-neutral-500">标签</span>
             <input
               value={tags}
