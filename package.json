@@ -71,7 +71,8 @@
     "sharp": "^0.35.0",
     "three": "^0.184.0",
     "unified": "^11.0.5",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "katex": "^0.16.11"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

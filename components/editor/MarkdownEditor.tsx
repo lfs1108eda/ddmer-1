@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef
-} from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import {
   EditorView,
   Decoration,
@@ -30,6 +25,7 @@ type Props = {
   value: string;
   onChange: (val: string) => void;
   onImage: (files: File[]) => Promise<string | null>;
+  onError?: (msg: string) => void;
   dark?: boolean;
   placeholder?: string;
 };
@@ -53,6 +49,10 @@ class ImageWidget extends WidgetType {
     img.src = this.url;
     img.alt = this.alt;
     img.loading = "lazy";
+    img.onerror = () => {
+      wrap.textContent = `图片加载失败：${this.alt || this.url}`;
+      wrap.className = "cm-image-error";
+    };
     wrap.appendChild(img);
     return wrap;
   }
@@ -72,7 +72,6 @@ function buildImageDecorations(view: EditorView): DecorationSet {
     while ((m = IMAGE_RE.exec(text))) {
       const start = from + m.index;
       const end = start + m[0].length;
-      // 光标落在图片语法上时显示原文，便于修改
       if (sel.from <= end && sel.to >= start) continue;
       builder.add(
         start,
@@ -99,16 +98,59 @@ const imagePlugin = ViewPlugin.fromClass(
   { decorations: value => value.decorations }
 );
 
+/** 从剪贴板事件里尽量取出图片文件（截图工具/网页复制的实现差异很大） */
+export function filesFromClipboard(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const out: File[] = [];
+
+  for (const item of Array.from(data.items ?? [])) {
+    if (item.kind === "file") {
+      const file = item.getAsFile();
+      if (file && file.type.startsWith("image/")) out.push(file);
+    }
+  }
+  if (!out.length) {
+    for (const file of Array.from(data.files ?? [])) {
+      if (file.type.startsWith("image/")) out.push(file);
+    }
+  }
+  // 有些浏览器把截图放在 text/html 里，形如 <img src="data:image/png;base64,...">
+  if (!out.length) {
+    const html = data.getData?.("text/html") ?? "";
+    const m = html.match(/<img[^>]+src="(data:image\/[^"]+)"/i);
+    if (m) {
+      const blob = dataURLtoBlob(m[1]);
+      if (blob) out.push(new File([blob], "pasted.png", { type: blob.type }));
+    }
+  }
+  return out;
+}
+
+function dataURLtoBlob(dataUrl: string): Blob | null {
+  try {
+    const [meta, b64] = dataUrl.split(",");
+    const mime = /data:([^;]+)/.exec(meta)?.[1] ?? "image/png";
+    const bin = atob(b64);
+    const buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    return new Blob([buf], { type: mime });
+  } catch {
+    return null;
+  }
+}
+
 const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
-  { value, onChange, onImage, dark = true, placeholder = "开始写作…" },
+  { value, onChange, onImage, onError, dark = true, placeholder = "开始写作…" },
   ref
 ) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onImageRef = useRef(onImage);
+  const onErrorRef = useRef(onError);
   onChangeRef.current = onChange;
   onImageRef.current = onImage;
+  onErrorRef.current = onError;
 
   useImperativeHandle(ref, () => ({
     focus: () => view.current?.focus(),
@@ -154,25 +196,30 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
   useEffect(() => {
     if (!host.current) return;
 
-    const uploadThen = (files: File[]) => {
-      onImageRef.current(files).then(text => {
-        if (!text || !view.current) return;
-        const { from } = view.current.state.selection.main;
-        view.current.dispatch({
-          changes: { from, insert: text },
-          selection: { anchor: from + text.length }
-        });
-      });
+    const handleFiles = (files: File[]) => {
+      if (!files.length) return;
+      onImageRef.current(files)
+        .then(text => {
+          if (!view.current) return;
+          if (!text) {
+            onErrorRef.current?.("图片上传失败，请检查网络或登录状态后重试");
+            return;
+          }
+          const { from } = view.current.state.selection.main;
+          view.current.dispatch({
+            changes: { from, insert: text },
+            selection: { anchor: from + text.length }
+          });
+        })
+        .catch(() => onErrorRef.current?.("图片上传异常"));
     };
 
     const handlers = EditorView.domEventHandlers({
       paste: event => {
-        const images = Array.from(event.clipboardData?.files ?? []).filter(f =>
-          f.type.startsWith("image/")
-        );
-        if (!images.length) return false;
+        const files = filesFromClipboard(event.clipboardData);
+        if (!files.length) return false; // 普通文本走默认粘贴
         event.preventDefault();
-        uploadThen(images);
+        handleFiles(files);
         return true;
       },
       dragover: event => {
@@ -183,11 +230,12 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
         return false;
       },
       drop: event => {
-        const files = Array.from(event.dataTransfer?.files ?? []);
-        const images = files.filter(f => f.type.startsWith("image/"));
-        if (!images.length) return false;
+        const files = Array.from(event.dataTransfer?.files ?? []).filter(f =>
+          f.type.startsWith("image/")
+        );
+        if (!files.length) return false;
         event.preventDefault();
-        uploadThen(images);
+        handleFiles(files);
         return true;
       }
     });
@@ -203,14 +251,20 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
         EditorView.lineWrapping,
         EditorView.theme({
           "&": { minHeight: "60vh", fontSize: "16px" },
-          ".cm-content": { padding: "8px 4px", lineHeight: "1.8" },
+          ".cm-content": { padding: "10px 6px", lineHeight: "1.9" },
           ".cm-scroller": { overflow: "auto" },
           "&.cm-focused": { outline: "none" },
           ".cm-image-widget img": {
             maxWidth: "100%",
             borderRadius: "12px",
             margin: "10px 0",
-            display: "block"
+            display: "block",
+            boxShadow: "0 2px 12px rgba(0,0,0,.08)"
+          },
+          ".cm-image-error": {
+            color: "#ef4444",
+            fontSize: "12px",
+            padding: "6px 0"
           }
         }),
         EditorView.updateListener.of(update => {
@@ -222,7 +276,22 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
     });
 
     view.current = new EditorView({ state, parent: host.current });
+
+    // 兜底：焦点不在编辑器里时粘贴图片，也能落到正文
+    const onWindowPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+      if (view.current?.hasFocus) return; // 编辑器自己会处理
+      const files = filesFromClipboard(e.clipboardData);
+      if (!files.length) return;
+      e.preventDefault();
+      view.current?.focus();
+      handleFiles(files);
+    };
+    window.addEventListener("paste", onWindowPaste);
+
     return () => {
+      window.removeEventListener("paste", onWindowPaste);
       view.current?.destroy();
       view.current = null;
     };
@@ -243,10 +312,10 @@ const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
     <div className="relative">
       <div
         ref={host}
-        className="rounded-xl border border-black/10 bg-white dark:border-white/10 dark:bg-[#1c1c1e]"
+        className="rounded-2xl border border-black/10 bg-white shadow-sm dark:border-white/10 dark:bg-[#1c1c1e]"
       />
       {!value && (
-        <div className="pointer-events-none absolute left-3 top-3 text-sm text-neutral-400">
+        <div className="pointer-events-none absolute left-4 top-4 text-sm text-neutral-400">
           {placeholder}
         </div>
       )}

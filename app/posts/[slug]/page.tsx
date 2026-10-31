@@ -5,7 +5,9 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import "katex/dist/katex.min.css";
 import { marked } from "marked";
+import { renderMarkdown } from "@/app/lib/markdown-math";
 import hljs from "highlight.js/lib/core";
 import typescript from "highlight.js/lib/languages/typescript";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -434,7 +436,7 @@ export default function PostDetailPage() {
             <div
               className="post-content prose prose-sm sm:prose-base md:prose-lg dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 leading-relaxed"
               onClick={handleContentClick}
-              dangerouslySetInnerHTML={{ __html: marked.parse(post.content) as string }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content) }}
             />
           </div>
         </div>

@@ -2,7 +2,8 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { marked } from "marked";
+import "katex/dist/katex.min.css";
+import { renderMarkdown } from "@/app/lib/markdown-math";
 import MarkdownEditor, { type EditorHandle } from "@/components/editor/MarkdownEditor";
 import { authHeaders, getToken, slugify } from "@/app/lib/client-auth";
 
@@ -26,7 +27,26 @@ const TOOLS: Tool[] = [
   { key: "ol", label: "1.", title: "有序列表", run: e => e.insertBlock("1. ", "列表项") },
   { key: "code", label: "</>", title: "代码块", run: e => e.insert("\n```ts\n\n```\n") },
   { key: "link", label: "🔗", title: "链接", run: e => e.wrap("[", "](https://)") },
-  { key: "line", label: "—", title: "分割线", run: e => e.insert("\n\n---\n\n") }
+  { key: "line", label: "—", title: "分割线", run: e => e.insert("\n\n---\n\n") },
+  {
+    key: "inline-math",
+    label: "ƒ",
+    title: "行内公式（$…$）",
+    run: e => {
+      const tex = window.prompt("输入行内公式的 LaTeX，例如：a^2 + b^2 = c^2");
+      e.insert(tex ? `$${tex}$` : "$$");
+    }
+  },
+  {
+    key: "block-math",
+    label: "Σ",
+    title: "块级公式（$$…$$）",
+    run: e => {
+      const tex = window.prompt("输入公式的 LaTeX，例如：\\int_0^1 x^2 dx = \\frac{1}{3}");
+      if (tex) e.insert(`\n$$\n${tex}\n$$\n`);
+      else e.insert("\n$$\n\n$$\n");
+    }
+  }
 ];
 
 function WriteInner() {
@@ -96,7 +116,7 @@ function WriteInner() {
     return () => clearTimeout(timer);
   }, [title, content, tags, ready, editId]);
 
-  const html = useMemo(() => (preview ? (marked.parse(content) as string) : ""), [content, preview]);
+  const html = useMemo(() => (preview ? renderMarkdown(content) : ""), [content, preview]);
   const wordCount = useMemo(() => content.replace(/\s/g, "").length, [content]);
 
   async function upload(files: File[]): Promise<string | null> {
@@ -215,6 +235,7 @@ function WriteInner() {
           value={content}
           onChange={setContent}
           onImage={upload}
+          onError={setHint}
           placeholder="开始写作…  直接粘贴截图，图片会自动上传并显示在这里"
         />
       )}
