@@ -38,6 +38,20 @@ async function compressImage(file: File): Promise<File> {
   return file;
 }
 
+/** 从 Markdown 提取纯文本摘要：去掉图片、代码块、HTML 与各种标记 */
+function buildDescription(md: string): string {
+  return md
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_~`>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
 function WriteInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -185,7 +199,7 @@ function WriteInner() {
       const payload = {
         title: title.trim(),
         slug: slugify(title),
-        description: content.replace(/[#>*`\-\[\]()!]/g, "").replace(/\s+/g, " ").slice(0, 120),
+        description: buildDescription(content),
         content,
         status: asDraft ? "draft" : "published",
         tags: tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean)

@@ -277,12 +277,7 @@ export default function PostDetailPage() {
             {post.title}
           </h1>
 
-          {/* 描述 */}
-          {post.description && (
-            <p className="post-description text-sm sm:text-base md:text-lg text-slate-600 dark:text-slate-300 mb-4 sm:mb-6 md:mb-6 leading-relaxed">
-              {post.description}
-            </p>
-          )}
+          {/* 描述：详情页不再单列展示，正文即预览所见内容（摘要仍用于列表与 SEO） */}
 
           {/* 元信息 + 标签 */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-5 pb-5 sm:mb-8 sm:pb-8 border-b border-slate-200/60 dark:border-white/10">
