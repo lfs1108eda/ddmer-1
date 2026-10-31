@@ -1,66 +1,105 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { marked } from "marked";
-import MarkdownEditor from "@/components/editor/MarkdownEditor";
-import {
-  authHeaders,
-  getToken,
-  slugify
-} from "@/app/lib/client-auth";
+import MarkdownEditor, { type EditorHandle } from "@/components/editor/MarkdownEditor";
+import { authHeaders, getToken, slugify } from "@/app/lib/client-auth";
+
+const DRAFT_KEY = "waopa_draft_v1";
+
+type Tool = {
+  key: string;
+  label: string;
+  title: string;
+  run: (editor: EditorHandle) => void;
+};
+
+const TOOLS: Tool[] = [
+  { key: "h2", label: "H2", title: "二级标题", run: e => e.insertBlock("## ", "小标题") },
+  { key: "h3", label: "H3", title: "三级标题", run: e => e.insertBlock("### ", "小标题") },
+  { key: "bold", label: "B", title: "加粗 (Ctrl+B)", run: e => e.wrap("**", "**") },
+  { key: "italic", label: "I", title: "斜体", run: e => e.wrap("*", "*") },
+  { key: "strike", label: "S", title: "删除线", run: e => e.wrap("~~", "~~") },
+  { key: "quote", label: "❝", title: "引用", run: e => e.insertBlock("> ", "引用内容") },
+  { key: "list", label: "•", title: "无序列表", run: e => e.insertBlock("- ", "列表项") },
+  { key: "ol", label: "1.", title: "有序列表", run: e => e.insertBlock("1. ", "列表项") },
+  { key: "code", label: "</>", title: "代码块", run: e => e.insert("\n```ts\n\n```\n") },
+  { key: "link", label: "🔗", title: "链接", run: e => e.wrap("[", "](https://)") },
+  { key: "line", label: "—", title: "分割线", run: e => e.insert("\n\n---\n\n") }
+];
 
 export default function WritePage() {
   const router = useRouter();
+  const editorRef = useRef<EditorHandle>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
   const [ready, setReady] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [tags, setTags] = useState("");
   const [preview, setPreview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [hint, setHint] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [hint, setHint] = useState("");
+  const [savedAt, setSavedAt] = useState<string>("");
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login?next=/write");
       return;
     }
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw);
+        setTitle(draft.title ?? "");
+        setContent(draft.content ?? "");
+        setTags(draft.tags ?? "");
+        if (draft.content) setHint("已恢复上次未发布的内容");
+      }
+    } catch {
+      /* 忽略损坏的草稿 */
+    }
     setReady(true);
   }, [router]);
 
-  const html = useMemo(() => {
-    if (!preview) return "";
-    return marked.parse(content || "") as string;
-  }, [content, preview]);
+  useEffect(() => {
+    if (!ready) return;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({ title, content, tags, at: Date.now() })
+        );
+        setSavedAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
+      } catch {
+        /* 存储满时忽略 */
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [title, content, tags, ready]);
 
-  const wordCount = useMemo(
-    () => content.replace(/\s/g, "").length,
-    [content]
-  );
+  const html = useMemo(() => (preview ? (marked.parse(content) as string) : ""), [content, preview]);
+  const wordCount = useMemo(() => content.replace(/\s/g, "").length, [content]);
 
-  async function uploadImage(file: File): Promise<string | null> {
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch("/api/upload/image", {
-      method: "POST",
-      headers: authHeaders(),
-      body: form
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json?.url ?? null;
-  }
-
-  async function handlePaste(files: File[]) {
+  async function upload(files: File[]): Promise<string | null> {
     setUploading(true);
     try {
       const parts: string[] = [];
       for (const file of files) {
-        const url = await uploadImage(file);
-        if (url) parts.push(`![${file.name}](${url})`);
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/upload/image", {
+          method: "POST",
+          headers: authHeaders(),
+          body: form
+        });
+        if (!res.ok) continue;
+        const json = await res.json();
+        if (json?.url) parts.push(`\n\n![${file.name}](${json.url})\n\n`);
       }
-      return parts.length ? `\n\n${parts.join("\n\n")}\n\n` : null;
+      return parts.length ? parts.join("") : null;
     } finally {
       setUploading(false);
     }
@@ -68,14 +107,8 @@ export default function WritePage() {
 
   async function submit(asDraft: boolean) {
     setHint("");
-    if (!title.trim()) {
-      setHint("请先写个标题");
-      return;
-    }
-    if (!content.trim()) {
-      setHint("正文还是空的");
-      return;
-    }
+    if (!title.trim()) return setHint("先写个标题吧");
+    if (!content.trim()) return setHint("正文还是空的");
     setSubmitting(true);
     try {
       const res = await fetch("/api/posts", {
@@ -84,21 +117,20 @@ export default function WritePage() {
         body: JSON.stringify({
           title: title.trim(),
           slug: slugify(title),
-          description: content.replace(/[#>*`\-\[\]()!]/g, "").slice(0, 120),
+          description: content
+            .replace(/[#>*`\-\[\]()!]/g, "")
+            .replace(/\s+/g, " ")
+            .slice(0, 120),
           content,
-          status: asDraft ? "draft" : "pending",
-          tags: tags
-            .split(/[,，\s]+/)
-            .map(t => t.trim())
-            .filter(Boolean)
+          status: asDraft ? "draft" : "published",
+          tags: tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean)
         })
       });
       const json = await res.json();
-      if (!res.ok) {
-        setHint(json?.error || "提交失败");
-        return;
-      }
-      router.push("/me");
+      if (!res.ok) return setHint(json?.error || "发布失败");
+      localStorage.removeItem(DRAFT_KEY);
+      router.push(asDraft ? "/me" : `/posts/${json.slug ?? slugify(title)}`);
+      router.refresh();
     } catch {
       setHint("网络异常，请重试");
     } finally {
@@ -110,22 +142,53 @@ export default function WritePage() {
 
   return (
     <div className="mx-auto w-full max-w-4xl px-5 py-8">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <input
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          placeholder="标题"
-          className="min-w-0 flex-1 border-0 bg-transparent text-2xl font-semibold tracking-tight outline-none placeholder:text-neutral-300 dark:placeholder:text-neutral-600"
-        />
-        <div className="flex shrink-0 items-center gap-2 text-xs text-neutral-500">
-          <span>{wordCount} 字</span>
+      {/* 标题 */}
+      <input
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        placeholder="请输入标题"
+        className="w-full border-0 bg-transparent text-3xl font-bold tracking-tight outline-none placeholder:text-neutral-300 dark:placeholder:text-neutral-700"
+      />
+
+      {/* 工具栏 */}
+      <div className="sticky top-16 z-20 my-3 flex flex-wrap items-center gap-1 rounded-xl border border-black/10 bg-white/90 px-2 py-1.5 backdrop-blur dark:border-white/10 dark:bg-[#1c1c1e]/90">
+        {TOOLS.map(tool => (
           <button
+            key={tool.key}
             type="button"
-            onClick={() => setPreview(v => !v)}
-            className="rounded-lg border border-black/10 px-2.5 py-1.5 hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+            title={tool.title}
+            onClick={() => editorRef.current && tool.run(editorRef.current)}
+            className="rounded-lg px-2.5 py-1.5 text-sm text-neutral-600 transition-colors hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
           >
-            {preview ? "继续写" : "预览"}
+            {tool.label}
           </button>
+        ))}
+        <button
+          type="button"
+          title="插入图片"
+          onClick={() => fileRef.current?.click()}
+          className="rounded-lg px-2.5 py-1.5 text-sm text-neutral-600 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
+        >
+          🖼
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={async e => {
+            const files = Array.from(e.target.files ?? []);
+            if (!files.length) return;
+            const text = await upload(files);
+            if (text) editorRef.current?.insert(text);
+            e.target.value = "";
+          }}
+        />
+        <div className="ml-auto flex items-center gap-3 pr-1 text-xs text-neutral-400">
+          {uploading && <span className="text-sky-500">图片上传中…</span>}
+          {savedAt && <span>已自动保存 {savedAt}</span>}
+          <span>{wordCount} 字</span>
         </div>
       </div>
 
@@ -136,21 +199,31 @@ export default function WritePage() {
         />
       ) : (
         <MarkdownEditor
+          ref={editorRef}
           value={content}
           onChange={setContent}
-          onPasteImage={handlePaste}
+          onImage={upload}
+          placeholder="开始写作…  直接粘贴截图，图片会自动上传并显示在这里"
         />
       )}
 
+      {/* 底部操作 */}
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <input
           value={tags}
           onChange={e => setTags(e.target.value)}
-          placeholder="标签，用空格或逗号分隔（可留空）"
+          placeholder="标签，用逗号或空格分隔（可留空）"
           className="w-full rounded-xl border border-black/10 bg-white px-4 py-2.5 text-sm outline-none focus:border-neutral-400 sm:max-w-sm dark:border-white/10 dark:bg-white/5"
         />
         <div className="flex items-center gap-2">
-          {hint && <span className="text-xs text-red-500">{hint}</span>}
+          {hint && <span className="text-xs text-amber-600">{hint}</span>}
+          <button
+            type="button"
+            onClick={() => setPreview(v => !v)}
+            className="rounded-xl border border-black/10 px-4 py-2.5 text-sm hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+          >
+            {preview ? "继续写" : "预览"}
+          </button>
           <button
             type="button"
             disabled={submitting}
@@ -163,16 +236,12 @@ export default function WritePage() {
             type="button"
             disabled={submitting || uploading}
             onClick={() => submit(false)}
-            className="rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 dark:bg-white dark:text-black"
+            className="rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50 dark:bg-white dark:text-black"
           >
-            {submitting ? "提交中…" : "提交审核"}
+            {submitting ? "发布中…" : "发布"}
           </button>
         </div>
       </div>
-
-      <p className="mt-4 text-xs leading-6 text-neutral-400">
-        粘贴截图会自动上传并插入正文 · 提交后需要作者审核通过才会公开
-      </p>
     </div>
   );
 }

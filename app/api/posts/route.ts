@@ -154,8 +154,15 @@ export async function POST(req: NextRequest) {
     const word_count = (content || "").length;
     const reading_time = Math.max(1, Math.floor(word_count / 300));
 
+    // 不设审核：普通用户投稿直接发布，只有显式存草稿才保留 draft
+    const finalStatus = isAdmin
+      ? status || "draft"
+      : status === "draft"
+        ? "draft"
+        : "published";
+
     let published_at = body.published_at ? new Date(body.published_at) : null;
-    if (status === "published" && !published_at) {
+    if (finalStatus === "published" && !published_at) {
       published_at = new Date();
     }
 
@@ -168,7 +175,7 @@ export async function POST(req: NextRequest) {
           content: content || "",
           cover: cover || "",
           category_id: category_id || null,
-          status: isAdmin ? status || "draft" : "pending",
+          status: finalStatus,
           author_id: Number(viewer.sub) || null,
           is_pinned: isAdmin ? is_pinned || false : false,
           word_count,
