@@ -52,6 +52,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const postExists = await prisma.post.findUnique({
+      where: { id: parseInt(post_id) },
+      select: { id: true },
+    });
+    if (!postExists) {
+      return NextResponse.json({ error: "文章不存在" }, { status: 404 });
+    }
+
     const userInfo = await getUserFromToken(request);
     const ip = getClientIp(request);
 
