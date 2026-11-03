@@ -14,6 +14,19 @@ async function getUserFromToken(request: Request) {
       const ghUser = await prisma.gitHubUser.findUnique({ where: { id: userId } });
       if (ghUser) return { type: "github" as const, github_user_id: ghUser.id, name: ghUser.login, avatar: ghUser.avatar };
     }
+    if (payload.type === "user") {
+      const userId = parseInt(payload.sub as string);
+      if (!isNaN(userId)) {
+        const siteUser = await prisma.user.findUnique({ where: { id: userId } });
+        if (siteUser) {
+          return {
+            type: "email" as const,
+            email_user_name: siteUser.nickname || siteUser.username,
+            email_user_avatar: siteUser.avatar || "",
+          };
+        }
+      }
+    }
     if (payload.type === "email" || payload.type === "anonymous") {
       return {
         type: "email" as const,

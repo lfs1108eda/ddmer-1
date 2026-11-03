@@ -55,6 +55,22 @@ function relativeTime(dateStr: string): string {
   return `${days}天前`;
 }
 
+/** 解析 JWT 载荷（只读 username 等公开字段） */
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const base = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base)
+        .split("")
+        .map(c => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 export default function PostComments({ postId }: { postId: number }) {
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +79,20 @@ export default function PostComments({ postId }: { postId: number }) {
     if (typeof window === "undefined") return null;
     const saved = localStorage.getItem("github_user");
     if (saved) {
-      try { return JSON.parse(saved); } catch { return null; }
+      try { return JSON.parse(saved); } catch { /* 继续尝试站点登录态 */ }
+    }
+    const siteToken = localStorage.getItem("waopa_token");
+    if (siteToken) {
+      const payload = decodeJwtPayload(siteToken);
+      if (payload?.username) {
+        return {
+          id: 0,
+          login: payload.username as string,
+          avatar: "",
+          bio: "",
+          created_at: ""
+        } as unknown as GitHubUser;
+      }
     }
     return null;
   });

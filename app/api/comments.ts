@@ -42,5 +42,10 @@ export function likeComment(commentId: number, unlike = false) {
 
 function getToken(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem("github_token") || localStorage.getItem("anonymous_token") || "";
+  return (
+    localStorage.getItem("waopa_token") ||
+    localStorage.getItem("github_token") ||
+    localStorage.getItem("anonymous_token") ||
+    ""
+  );
 }
