@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import "katex/dist/katex.min.css";
 import { renderMarkdown } from "@/app/lib/markdown-math";
 import MarkdownEditor, { type EditorHandle } from "@/components/editor/MarkdownEditor";
-import { authHeaders, getToken, slugify } from "@/app/lib/client-auth";
+import { authFetch, authHeaders, clearSession, getToken, slugify } from "@/app/lib/client-auth";
 
 const DRAFT_KEY = "waopa_draft_v2";
 const MAX_CHARS = 100000;
@@ -158,13 +158,18 @@ function WriteInner() {
         form.append("file", file);
         let res: Response;
         try {
-          res = await fetch("/api/upload/image", {
+          res = await authFetch("/api/upload/image", {
             method: "POST",
-            headers: authHeaders(),
             body: form
           });
         } catch {
           setHint("网络异常，图片上传失败");
+          return null;
+        }
+        if (res.status === 401) {
+          clearSession();
+          setHint("登录已过期，正在跳转登录…");
+          router.replace("/login?next=/write");
           return null;
         }
         if (!res.ok) {
@@ -199,9 +204,8 @@ function WriteInner() {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/upload/image", {
+      const res = await authFetch("/api/upload/image", {
         method: "POST",
-        headers: authHeaders(),
         body: form
       });
       if (!res.ok) {
@@ -236,7 +240,7 @@ function WriteInner() {
         status: asDraft ? "draft" : "published",
         tags: tags.split(/[,，\s]+/).map(t => t.trim()).filter(Boolean)
       };
-      const res = await fetch(editId ? `/api/posts/${editId}` : "/api/posts", {
+      const res = await authFetch(editId ? `/api/posts/${editId}` : "/api/posts", {
         method: editId ? "PUT" : "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload)

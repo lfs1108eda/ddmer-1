@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { authHeaders, clearSession, getToken } from "@/app/lib/client-auth";
+import { authFetch, clearSession, getToken } from "@/app/lib/client-auth";
 
 type MyPost = {
   id: number;
@@ -35,7 +35,7 @@ export default function MyPostsPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    fetch("/api/posts?mine=1&size=50", { headers: authHeaders() })
+    authFetch("/api/posts?mine=1&size=50")
       .then(r => (r.ok ? r.json() : []))
       .then(setPosts)
       .catch(() => setPosts([]))
@@ -54,10 +54,7 @@ export default function MyPostsPage() {
     if (!window.confirm(`确定删除《${post.title}》？删除后无法恢复。`)) return;
     setBusyId(post.id);
     try {
-      const res = await fetch(`/api/posts/${post.id}`, {
-        method: "DELETE",
-        headers: authHeaders()
-      });
+      const res = await authFetch(`/api/posts/${post.id}`, { method: "DELETE" });
       if (res.ok) {
         setPosts(list => list.filter(p => p.id !== post.id));
       } else {

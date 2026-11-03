@@ -30,10 +30,11 @@ function LoginForm() {
         setError(json?.message || "登录失败");
         return;
       }
-      saveSession(json.data.accessToken, {
-        id: Number(json.data.user?.id ?? 0),
-        username
-      });
+      saveSession(
+        json.data.accessToken,
+        { id: Number(json.data.user?.id ?? 0), username },
+        json.data.refreshToken
+      );
       router.push(next);
     } catch {
       setError("网络异常，请重试");
