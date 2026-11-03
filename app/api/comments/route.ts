@@ -83,7 +83,10 @@ export async function POST(request: Request) {
       include: { githubUser: true },
     });
 
-    return NextResponse.json(comment, { status: 201 });
+    return NextResponse.json(
+      { ...comment, github_user: comment.githubUser ?? null },
+      { status: 201 }
+    );
   } catch {
     return NextResponse.json({ error: "创建评论失败" }, { status: 500 });
   }

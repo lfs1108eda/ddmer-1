@@ -9,6 +9,8 @@ function buildCommentTree(
     .filter((c) => c.parent_id === parentId)
     .map((c) => ({
       ...c,
+      // 前端字段是 github_user，Prisma 返回的是 githubUser，这里统一
+      github_user: c.githubUser ?? null,
       replies: buildCommentTree(comments, c.id),
     }));
 }
