@@ -85,10 +85,29 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "没有要修改的内容" }, { status: 400 });
     }
 
+    const before = await prisma.user.findUnique({ where: { id: userId } });
+
     const updated = await prisma.user.update({
       where: { id: userId },
       data
     });
+
+    // 改了显示名或头像：把本人发过的评论一起更新（评论里存的是名字快照）
+    if (before && (data.nickname !== undefined || data.avatar !== undefined)) {
+      const oldNames = [before.nickname, before.username].filter(Boolean);
+      if (oldNames.length) {
+        await prisma.comment.updateMany({
+          where: {
+            github_user_id: null,
+            email_user_name: { in: oldNames }
+          },
+          data: {
+            email_user_name: updated.nickname || updated.username,
+            email_user_avatar: updated.avatar || ""
+          }
+        });
+      }
+    }
 
     return NextResponse.json({ code: 0, data: publicUser(updated) });
   } catch (err: any) {
