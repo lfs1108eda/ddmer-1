@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import UserAvatar from "@/components/ui/UserAvatar";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, Heart, Send, Reply, ChevronDown, ChevronUp, LogOut } from "lucide-react";
 import {
@@ -281,13 +282,7 @@ export default function PostComments({ postId }: { postId: number }) {
       >
         {user ? (
           <div className="flex items-center gap-2 md:gap-3 px-3 py-2 md:px-5 md:py-3 rounded-2xl bg-white/50 dark:bg-slate-800/60 backdrop-blur-xl border border-white/30 dark:border-white/10">
-            <Image
-              src={user?.avatar || ""}
-              alt={user?.login || ""}
-              width={32}
-              height={32}
-              className="rounded-full md:w-9 md:h-9"
-            />
+            <UserAvatar src={user?.avatar} name={user?.login} size={36} />
             <div className="flex-1 min-w-0">
               <span className="text-xs md:text-sm font-semibold text-slate-800 dark:text-slate-200">
                 {user?.login || ""}
@@ -304,13 +299,7 @@ export default function PostComments({ postId }: { postId: number }) {
           </div>
         ) : anonymousUser ? (
           <div className="flex items-center gap-2 md:gap-3 px-3 py-2 md:px-5 md:py-3 rounded-2xl bg-white/50 dark:bg-slate-800/60 backdrop-blur-xl border border-white/30 dark:border-white/10">
-            <Image
-              src={anonymousUser?.avatar || ""}
-              alt={anonymousUser?.login || ""}
-              width={32}
-              height={32}
-              className="rounded-full md:w-9 md:h-9"
-            />
+            <UserAvatar src={anonymousUser?.avatar} name={anonymousUser?.login} size={36} />
             <div className="flex-1 min-w-0">
               <span className="text-xs md:text-sm font-semibold text-slate-800 dark:text-slate-200">
                 {anonymousUser?.login || ""}
@@ -527,27 +516,11 @@ function CommentCard({
     <div className="rounded-2xl bg-white/50 dark:bg-slate-800/60 backdrop-blur-xl border border-white/30 dark:border-white/10 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300">
       <div className="p-3 md:p-5">
         <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
-          {comment.github_user ? (
-            <Image
-              src={comment.github_user.avatar}
-              alt={comment.github_user.login}
-              width={32}
-              height={32}
-              className="rounded-full md:w-9 md:h-9"
-            />
-          ) : comment.email_user_avatar ? (
-            <Image
-              src={comment.email_user_avatar}
-              alt={comment.email_user_name}
-              width={32}
-              height={32}
-              className="rounded-full md:w-9 md:h-9"
-            />
-          ) : (
-            <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 flex items-center justify-center text-white text-xs md:text-sm font-bold">
-              ?
-            </div>
-          )}
+          <UserAvatar
+            src={comment.github_user?.avatar || comment.email_user_avatar}
+            name={comment.github_user?.login || comment.email_user_name}
+            size={36}
+          />
           <div className="flex-1 min-w-0">
             <span className="text-xs md:text-sm font-semibold text-slate-800 dark:text-slate-200">
               {comment.github_user?.login ?? comment.email_user_name ?? "匿名用户"}
@@ -652,27 +625,12 @@ function ReplyCard({
   return (
     <div className="px-3 py-2 md:px-5 md:py-3 border-b border-slate-200/30 dark:border-white/5 last:border-0">
       <div className="flex items-start gap-2 md:gap-3">
-        {reply.github_user ? (
-          <Image
-            src={reply.github_user.avatar}
-            alt={reply.github_user.login}
-            width={24}
-            height={24}
-            className="rounded-full mt-0.5 md:w-7 md:h-7"
-          />
-        ) : reply.email_user_avatar ? (
-          <Image
-            src={reply.email_user_avatar}
-            alt={reply.email_user_name}
-            width={24}
-            height={24}
-            className="rounded-full mt-0.5 md:w-7 md:h-7"
-          />
-        ) : (
-          <div className="w-6 h-6 md:w-7 md:h-7 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 flex items-center justify-center text-white text-[10px] md:text-xs font-bold mt-0.5">
-            ?
-          </div>
-        )}
+        <UserAvatar
+          src={reply.github_user?.avatar || reply.email_user_avatar}
+          name={reply.github_user?.login || reply.email_user_name}
+          size={28}
+          className="mt-0.5"
+        />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 md:gap-2 mb-0.5 md:mb-1">
             <span className="text-[10px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
