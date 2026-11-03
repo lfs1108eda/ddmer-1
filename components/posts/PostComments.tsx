@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import UserAvatar from "@/components/ui/UserAvatar";
 import { isTokenExpired, refreshSession } from "@/app/lib/client-auth";
 import { motion, AnimatePresence } from "framer-motion";
@@ -550,11 +551,38 @@ function CommentCard({
     <div className="rounded-2xl bg-white/50 dark:bg-slate-800/60 backdrop-blur-xl border border-white/30 dark:border-white/10 shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-300">
       <div className="p-3 md:p-5">
         <div className="flex items-center gap-2 md:gap-3 mb-2 md:mb-3">
-          <UserAvatar
-            src={comment.github_user?.avatar || comment.email_user_avatar}
-            name={comment.github_user?.login || comment.email_user_name}
-            size={36}
-          />
+          {(() => {
+            const gh = comment.github_user;
+            const label = gh?.login || comment.email_user_name;
+            const avatar = (
+              <UserAvatar
+                src={gh?.avatar || comment.email_user_avatar}
+                name={label}
+                size={36}
+                className="transition-transform hover:scale-105"
+              />
+            );
+            if (gh?.login) {
+              return (
+                <a
+                  href={`https://github.com/${gh.login}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`${gh.login} 的 GitHub`}
+                >
+                  {avatar}
+                </a>
+              );
+            }
+            if (label) {
+              return (
+                <Link href={`/u/${encodeURIComponent(label)}`} title={`${label} 的主页`}>
+                  {avatar}
+                </Link>
+              );
+            }
+            return avatar;
+          })()}
           <div className="flex-1 min-w-0">
             <span className="text-xs md:text-sm font-semibold text-slate-800 dark:text-slate-200">
               {comment.github_user?.login ?? comment.email_user_name ?? "匿名用户"}
@@ -659,12 +687,38 @@ function ReplyCard({
   return (
     <div className="px-3 py-2 md:px-5 md:py-3 border-b border-slate-200/30 dark:border-white/5 last:border-0">
       <div className="flex items-start gap-2 md:gap-3">
-        <UserAvatar
-          src={reply.github_user?.avatar || reply.email_user_avatar}
-          name={reply.github_user?.login || reply.email_user_name}
-          size={28}
-          className="mt-0.5"
-        />
+        {(() => {
+          const gh = reply.github_user;
+          const label = gh?.login || reply.email_user_name;
+          const avatar = (
+            <UserAvatar
+              src={gh?.avatar || reply.email_user_avatar}
+              name={label}
+              size={28}
+              className="mt-0.5 transition-transform hover:scale-105"
+            />
+          );
+          if (gh?.login) {
+            return (
+              <a
+                href={`https://github.com/${gh.login}`}
+                target="_blank"
+                rel="noreferrer"
+                title={`${gh.login} 的 GitHub`}
+              >
+                {avatar}
+              </a>
+            );
+          }
+          if (label) {
+            return (
+              <Link href={`/u/${encodeURIComponent(label)}`} title={`${label} 的主页`}>
+                {avatar}
+              </Link>
+            );
+          }
+          return avatar;
+        })()}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 md:gap-2 mb-0.5 md:mb-1">
             <span className="text-[10px] md:text-xs font-semibold text-slate-700 dark:text-slate-300">
