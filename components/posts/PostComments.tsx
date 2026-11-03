@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import UserAvatar from "@/components/ui/UserAvatar";
+import { isTokenExpired, refreshSession } from "@/app/lib/client-auth";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, Heart, Send, Reply, ChevronDown, ChevronUp, LogOut } from "lucide-react";
 import {
@@ -206,6 +207,10 @@ export default function PostComments({ postId }: { postId: number }) {
   async function handleSubmit() {
     if (!inputValue.trim() || submitting) return;
     setSubmitting(true);
+    // 站点登录态过期时先续期，避免评论被 401 拦下
+    if (localStorage.getItem("waopa_token") && isTokenExpired(localStorage.getItem("waopa_token"))) {
+      await refreshSession();
+    }
     try {
       const newComment = await createComment({
         post_id: postId,

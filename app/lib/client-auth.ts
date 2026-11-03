@@ -92,6 +92,19 @@ export async function authFetch(input: string, init: RequestInit = {}): Promise<
   return res;
 }
 
+/** 判断 JWT 是否已过期（留 60 秒余量） */
+export function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const base = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base));
+    if (!payload?.exp) return false;
+    return payload.exp * 1000 < Date.now() + 60_000;
+  } catch {
+    return true;
+  }
+}
+
 export function slugify(title: string) {
   const ascii = title
     .toLowerCase()
